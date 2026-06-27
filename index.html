@@ -1175,8 +1175,14 @@
         // ==================== 数据操作模块 ====================
         async function loadStudents(page) {
             if (!currentUserId) return;
+            try {
             const keyword = document.getElementById('searchInput').value.trim();
             const res = await fetch(`${API}/students/?user_id=${currentUserId}&page=${page}&size=${pageSize}&keyword=${encodeURIComponent(keyword)}`);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                showToast(err.detail || '加载学生数据失败', 'error');
+                return;
+            }
             const result = await res.json();
             const tbody = document.getElementById('studentTableBody');
             const emptyHint = document.getElementById('emptyHint');
@@ -1230,6 +1236,9 @@
             document.getElementById('pageInfo').innerHTML = `第 <strong>${currentPage}</strong> / <strong>${totalPages}</strong> 页`;
             document.getElementById('prevPageBtn').disabled = currentPage <= 1;
             document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
+            } catch (e) {
+                showToast('网络错误，无法加载数据: ' + e.message, 'error');
+            }
         }
 
         function changePage(step) {
@@ -1380,11 +1389,16 @@
 
         async function loadStats() {
             if (!currentUserId) return;
-            const res = await fetch(`${API}/stats/?user_id=${currentUserId}`);
-            if (res.ok) {
-                const s = await res.json();
-                drawPie(s);
-                buildLegend(s);
+            try {
+                const res = await fetch(`${API}/stats/?user_id=${currentUserId}`);
+                if (res.ok) {
+                    const s = await res.json();
+                    drawPie(s);
+                    buildLegend(s);
+                }
+            } catch (e) {
+                // 统计加载失败不弹 toast，避免干扰
+                console.error('加载统计失败:', e);
             }
         }
 

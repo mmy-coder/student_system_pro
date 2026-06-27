@@ -1,5 +1,7 @@
 import csv
 import io
+import os
+import sys
 from datetime import date
 import pymysql
 from fastapi import FastAPI, HTTPException, Query
@@ -8,22 +10,132 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
 
-import os
+# 修复 Windows 控制台中文编码问题
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # ==================== 数据库配置 ====================
 DB_CONFIG = {
     "host": "localhost",
     "user": os.getenv("DB_USER", "root"),
-    "password": os.getenv("DB_PASSWORD", ""),
+    "password": os.getenv("DB_PASSWORD", "200561@Mayun"),
     "database": "student_pro_db",
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
+    "connect_timeout": 5,
 }
 
 app = FastAPI(title="企业级学生管理系统")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
 )
+
+
+# ==================== 数据库工具函数 ====================
+def get_db_connection():
+    """获取数据库连接，统一处理连接异常"""
+    try:
+        return pymysql.connect(**DB_CONFIG)
+    except pymysql.err.OperationalError as e:
+        code = e.args[0] if e.args else 0
+        if code == 1045:
+            raise HTTPException(
+                status_code=500,
+                detail="数据库认证失败，请检查 DB_USER / DB_PASSWORD 环境变量"
+            )
+        elif code == 1049:
+            raise HTTPException(
+                status_code=500,
+                detail="数据库 student_pro_db 不存在，请先执行 init_db.py 初始化"
+            )
+        elif code == 2003:
+            raise HTTPException(
+                status_code=500,
+                detail="无法连接到 MySQL 服务器，请确认 MySQL 服务已启动"
+            )
+        else:
+            raise HTTPException(status_code=500, detail=f"数据库连接失败: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"数据库连接失败: {e}")
+
+
+def init_database():
+    """
+    启动时自动创建数据库和表（如果不存在）。
+    先连接到 MySQL（不指定数据库），创建数据库后再创建表。
+    """
+    config_no_db = {
+        "host": DB_CONFIG["host"],
+        "user": DB_CONFIG["user"],
+        "password": DB_CONFIG["password"],
+        "charset": DB_CONFIG["charset"],
+        "connect_timeout": 5,
+    }
+    try:
+        conn = pymysql.connect(**config_no_db)
+        with conn.cursor() as cur:
+            cur.execute(
+                f"CREATE DATABASE IF NOT EXISTS `{DB_CONFIG['database']}` "
+                f"DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+        conn.close()
+    except pymysql.err.OperationalError as e:
+        code = e.args[0] if e.args else 0
+        if code == 1045:
+            print(f"[WARN] MySQL 认证失败 — 用户名={config_no_db['user']}, 密码={'***' if config_no_db['password'] else '(空)'}")
+            print("[WARN] 请设置环境变量: $env:DB_PASSWORD='你的MySQL密码'")
+        elif code == 2003:
+            print("[WARN] 无法连接到 MySQL 服务器 (localhost)")
+            print("[WARN] 请确认 MySQL 服务已启动: net start MySQL80")
+        else:
+            print(f"[WARN] 数据库连接失败: {e}")
+        print("[WARN] 服务将继续运行，但数据库功能不可用")
+        return
+
+    try:
+        conn = pymysql.connect(**DB_CONFIG)
+        with conn.cursor() as cur:
+            # 用户表
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) NOT NULL UNIQUE,
+                    password VARCHAR(255) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+            # 学生表
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS students (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    name VARCHAR(50) NOT NULL,
+                    age INT NOT NULL,
+                    gender VARCHAR(10) NOT NULL,
+                    score DECIMAL(5,1) NOT NULL,
+                    phone VARCHAR(20) DEFAULT '',
+                    class_name VARCHAR(50) DEFAULT '',
+                    enrollment_date DATE DEFAULT NULL,
+                    address VARCHAR(200) DEFAULT '',
+                    height DECIMAL(5,1) DEFAULT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_user_id (user_id),
+                    INDEX idx_name (name)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+        conn.commit()
+        conn.close()
+        print("[OK] 数据库初始化完成 — student_pro_db (users + students)")
+    except Exception as e:
+        print(f"[WARN] 建表失败: {e}")
+        print("[WARN] 服务将继续运行，但数据库功能可能不可用")
+
+
+# ==================== FastAPI 启动事件 ====================
+@app.on_event("startup")
+async def startup():
+    """服务启动时初始化数据库"""
+    init_database()
 
 
 # ==================== Pydantic 数据模型 ====================
@@ -67,7 +179,7 @@ class StudentUpdate(BaseModel):
 # 1. 注册接口
 @app.post("/register")
 async def register(user: UserRegister):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM users WHERE username = %s", (user.username,))
@@ -87,7 +199,7 @@ async def register(user: UserRegister):
 # 2. 登录接口
 @app.post("/login")
 async def login(user: UserLogin):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -114,24 +226,24 @@ async def get_students(
     size: int = Query(10, ge=1, le=100),
     keyword: str = "",
 ):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             offset = (page - 1) * size
-            sql = "SELECT * FROM students WHERE 1=1"
+            base_where = "WHERE 1=1"
             params = []
 
             if keyword:
-                sql += " AND name LIKE %s"
+                base_where += " AND name LIKE %s"
                 params.append(f"%{keyword}%")
 
             # 获取总记录数
-            count_sql = sql.replace("SELECT *", "SELECT COUNT(*) as total")
+            count_sql = f"SELECT COUNT(*) as total FROM students {base_where}"
             cur.execute(count_sql, params)
             total = cur.fetchone()["total"]
 
             # 获取当前页数据
-            sql += " ORDER BY id ASC LIMIT %s OFFSET %s"
+            sql = f"SELECT * FROM students {base_where} ORDER BY id ASC LIMIT %s OFFSET %s"
             params.extend([size, offset])
             cur.execute(sql, params)
             data = cur.fetchall()
@@ -144,7 +256,7 @@ async def get_students(
 # 4. 添加学生
 @app.post("/students/")
 async def add_student(user_id: int, student: StudentCreate):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             sql = """INSERT INTO students (user_id, name, age, gender, score, phone, class_name, enrollment_date, address, height)
@@ -173,7 +285,7 @@ async def add_student(user_id: int, student: StudentCreate):
 # 5. 删除学生（带企业级软/硬删除，此处用硬删除）
 @app.delete("/students/{student_id}")
 async def delete_student(student_id: int, user_id: int):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM students WHERE id = %s", (student_id,))
@@ -189,7 +301,7 @@ async def delete_student(student_id: int, user_id: int):
 # 6. 修改学生
 @app.put("/students/{student_id}")
 async def update_student(student_id: int, user_id: int, student: StudentUpdate):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             updates, params = [], []
@@ -235,7 +347,7 @@ async def update_student(student_id: int, user_id: int, student: StudentUpdate):
 @app.delete("/students/batch/")
 async def batch_delete_students(user_id: int, ids: str = Query(...)):
     """批量删除，ids 为逗号分隔的 ID 列表，如 ids=1,3,5"""
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
         if not id_list:
@@ -252,7 +364,7 @@ async def batch_delete_students(user_id: int, ids: str = Query(...)):
 # 9. 数据统计接口
 @app.get("/stats/")
 async def get_stats(user_id: int):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) as total FROM students")
@@ -285,7 +397,7 @@ async def get_stats(user_id: int):
 # 10. 导出学生数据为 CSV
 @app.get("/students/export/")
 async def export_students(user_id: int, keyword: str = ""):
-    conn = pymysql.connect(**DB_CONFIG)
+    conn = get_db_connection()
     try:
         with conn.cursor() as cur:
             sql = "SELECT id, name, age, gender, score, phone, class_name, enrollment_date, address, height FROM students WHERE 1=1"
