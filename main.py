@@ -106,10 +106,9 @@ async def get_students(
     conn = pymysql.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cur:
-            # 计算偏移量
             offset = (page - 1) * size
-            sql = "SELECT * FROM students WHERE user_id = %s"
-            params = [user_id]
+            sql = "SELECT * FROM students WHERE 1=1"
+            params = []
 
             if keyword:
                 sql += " AND name LIKE %s"
@@ -121,7 +120,7 @@ async def get_students(
             total = cur.fetchone()["total"]
 
             # 获取当前页数据
-            sql += " ORDER BY id DESC LIMIT %s OFFSET %s"
+            sql += " ORDER BY id ASC LIMIT %s OFFSET %s"
             params.extend([size, offset])
             cur.execute(sql, params)
             data = cur.fetchall()
@@ -163,12 +162,9 @@ async def delete_student(student_id: int, user_id: int):
     conn = pymysql.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT id FROM students WHERE id = %s AND user_id = %s",
-                (student_id, user_id),
-            )
+            cur.execute("SELECT id FROM students WHERE id = %s", (student_id,))
             if not cur.fetchone():
-                raise HTTPException(status_code=404, detail="未找到该学生或无权操作")
+                raise HTTPException(status_code=404, detail="未找到该学生")
             cur.execute("DELETE FROM students WHERE id = %s", (student_id,))
             conn.commit()
             return {"message": "删除成功"}
@@ -202,8 +198,8 @@ async def update_student(student_id: int, user_id: int, student: StudentUpdate):
                 updates.append("height = %s")
                 params.append(student.height)
             if updates:
-                sql = f"UPDATE students SET {', '.join(updates)} WHERE id = %s AND user_id = %s"
-                params.extend([student_id, user_id])
+                sql = f"UPDATE students SET {', '.join(updates)} WHERE id = %s"
+                params.append(student_id)
                 cur.execute(sql, params)
                 conn.commit()
                 return {"message": "更新成功"}
