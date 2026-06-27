@@ -415,7 +415,8 @@ async def export_students(user_id: int, keyword: str = ""):
             for row in data:
                 writer.writerow([
                     row["id"], row["name"], row["age"], row["gender"], row["score"],
-                    row.get("phone", ""), row.get("class_name", ""), row.get("enrollment_date", ""),
+                    row.get("phone", ""), row.get("class_name", ""),
+                    f'="{row["enrollment_date"]}"' if row.get("enrollment_date") else "",
                     row.get("address", ""), row.get("height", "")
                 ])
             output.seek(0)
