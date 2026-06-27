@@ -1,3 +1,7 @@
 .playwright-mcp/
 page-snapshot*.md
 CLAUDE.md
+venv/
+__pycache__/
+.env
+*.pyc

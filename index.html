@@ -905,9 +905,17 @@
                         <button class="btn-primary btn-sm" onclick="loadStudents(1)">搜索</button>
                     </div>
                     <div class="toolbar-right">
+                        <button class="btn-primary btn-sm" onclick="exportCSV()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            导出
+                        </button>
                         <button class="btn-blue btn-sm" onclick="showAddModal()">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
                             添加学生
+                        </button>
+                        <button class="btn-danger btn-sm" id="batchDeleteBtn" onclick="batchDelete()" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            批量删除
                         </button>
                         <span class="user-pill">
                             <span class="avatar" id="userAvatar">U</span>
@@ -917,6 +925,20 @@
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                         </button>
                     </div>
+                </div>
+            </div>
+
+            <!-- 数据统计 -->
+            <div class="card" style="padding:20px 28px;">
+                <div class="card-header" style="margin-bottom:16px;">
+                    <div class="icon-wrapper blue">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                    </div>
+                    <h3 style="margin-bottom:0;">数据概览</h3>
+                </div>
+                <div style="display:flex;align-items:center;gap:32px;flex-wrap:wrap;">
+                    <canvas id="pieChart" width="220" height="220" style="flex-shrink:0;"></canvas>
+                    <div style="display:flex;flex-direction:column;gap:10px;min-width:180px;" id="pieLegend"></div>
                 </div>
             </div>
 
@@ -932,11 +954,15 @@
                     <table>
                         <thead>
                             <tr>
+                                <th style="width:36px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()" style="width:16px;height:16px;cursor:pointer;"></th>
                                 <th>学号</th>
                                 <th>姓名</th>
                                 <th>年龄</th>
                                 <th>性别</th>
                                 <th>成绩</th>
+                                <th>电话</th>
+                                <th>班级</th>
+                                <th>入学日期</th>
                                 <th>地址</th>
                                 <th>身高</th>
                                 <th style="text-align:right;">操作</th>
@@ -1007,13 +1033,25 @@
                     <label>成绩</label>
                     <input type="number" step="0.1" id="sScore" placeholder="例如：88.5" min="0" max="100">
                 </div>
+                <div>
+                    <label>电话</label>
+                    <input type="text" id="sPhone" placeholder="例如：13800138000">
+                </div>
+                <div>
+                    <label>班级</label>
+                    <input type="text" id="sClass" placeholder="例如：高三(1)班">
+                </div>
+                <div>
+                    <label>入学日期</label>
+                    <input type="date" id="sEnrollDate">
+                </div>
+                <div>
+                    <label>身高 (cm)</label>
+                    <input type="number" id="sHeight" placeholder="例如：175.0" min="0" max="300" step="0.1">
+                </div>
                 <div class="span-2">
                     <label>地址</label>
                     <input type="text" id="sAddress" placeholder="例如：北京市朝阳区">
-                </div>
-                <div class="span-2">
-                    <label>身高 (cm)</label>
-                    <input type="number" id="sHeight" placeholder="例如：175.0" min="0" max="300" step="0.1">
                 </div>
             </div>
             <div class="btn-group right">
@@ -1030,6 +1068,7 @@
         let totalPages = 1;
         let currentUserId = null;
         let deleteTargetId = null;
+        let selectedIds = new Set();
 
         const API = '';
 
@@ -1043,6 +1082,7 @@
                 document.getElementById('dashboardView').classList.remove('hidden');
                 updateUserPill(username || '用户');
                 loadStudents(1);
+                loadStats();
             }
 
             // 点击弹窗遮罩关闭
@@ -1114,6 +1154,7 @@
                     document.getElementById('dashboardView').classList.remove('hidden');
                     showToast(`欢迎回来，${data.username}`, 'success');
                     loadStudents(1);
+                    loadStats();
                 }
             } else {
                 showToast(data.detail || '操作失败', 'error');
@@ -1151,18 +1192,26 @@
                     const genderClass = s.gender === '男' ? 'gender-male' : s.gender === '女' ? 'gender-female' : '';
                     const escapedName = s.name.replace(/'/g, "\\'");
                     const escapedGender = s.gender.replace(/'/g, "\\'");
+                    const escapedPhone = (s.phone || '').replace(/'/g, "\\'");
+                    const escapedClass = (s.class_name || '').replace(/'/g, "\\'");
                     const escapedAddr = (s.address || '').replace(/'/g, "\\'");
+                    const enrollDate = s.enrollment_date || '';
+                    const checked = selectedIds.has(s.id) ? 'checked' : '';
                     tbody.innerHTML += `
                         <tr>
+                            <td><input type="checkbox" class="row-checkbox" value="${s.id}" ${checked} onchange="onCheckChange()" style="width:16px;height:16px;cursor:pointer;"></td>
                             <td><span class="id-badge">#${s.id}</span></td>
                             <td style="color:var(--text-primary);font-weight:500;">${s.name}</td>
                             <td>${s.age}</td>
                             <td><span class="gender-badge ${genderClass}">${s.gender || '-'}</span></td>
                             <td><span class="score-badge ${scoreClass}">${s.score}</span></td>
-                            <td>${s.address || '<span style="color:var(--text-muted)">-</span>'}</td>
+                            <td>${s.phone || '<span style="color:var(--text-muted)">-</span>'}</td>
+                            <td>${s.class_name || '<span style="color:var(--text-muted)">-</span>'}</td>
+                            <td style="white-space:nowrap;">${enrollDate || '<span style="color:var(--text-muted)">-</span>'}</td>
+                            <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(s.address||'').replace(/"/g, '&quot;')}">${s.address || '<span style="color:var(--text-muted)">-</span>'}</td>
                             <td>${s.height ? s.height + ' cm' : '<span style="color:var(--text-muted)">-</span>'}</td>
                             <td class="actions">
-                                <button class="btn-blue btn-xs" onclick="openEditModal(${s.id}, '${escapedName}', ${s.age}, '${escapedGender}', ${s.score}, '${escapedAddr}', ${s.height || 'null'})">
+                                <button class="btn-blue btn-xs" onclick="openEditModal(${s.id}, '${escapedName}', ${s.age}, '${escapedGender}', ${s.score}, '${escapedPhone}', '${escapedClass}', '${enrollDate}', '${escapedAddr}', ${s.height || 'null'})">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                                     编辑
                                 </button>
@@ -1213,18 +1262,21 @@
         function showAddModal() {
             document.getElementById('modalTitle').innerText = '添加学生';
             document.getElementById('editStudentId').value = '';
-            ['sName', 'sAge', 'sGender', 'sScore', 'sAddress', 'sHeight'].forEach(id => document.getElementById(id).value = '');
+            ['sName', 'sAge', 'sGender', 'sScore', 'sPhone', 'sClass', 'sEnrollDate', 'sAddress', 'sHeight'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('studentModal').classList.remove('hidden');
             setTimeout(() => document.getElementById('sName').focus(), 100);
         }
 
-        function openEditModal(id, name, age, gender, score, address, height) {
+        function openEditModal(id, name, age, gender, score, phone, className, enrollDate, address, height) {
             document.getElementById('modalTitle').innerText = '修改学生信息';
             document.getElementById('editStudentId').value = id;
             document.getElementById('sName').value = name;
             document.getElementById('sAge').value = age;
             document.getElementById('sGender').value = gender;
             document.getElementById('sScore').value = score;
+            document.getElementById('sPhone').value = phone === 'null' ? '' : phone;
+            document.getElementById('sClass').value = className === 'null' ? '' : className;
+            document.getElementById('sEnrollDate').value = enrollDate === 'null' ? '' : enrollDate;
             document.getElementById('sAddress').value = address;
             document.getElementById('sHeight').value = height === 'null' ? '' : height;
             document.getElementById('studentModal').classList.remove('hidden');
@@ -1241,6 +1293,9 @@
                 age: parseInt(document.getElementById('sAge').value),
                 gender: document.getElementById('sGender').value.trim(),
                 score: parseFloat(document.getElementById('sScore').value),
+                phone: document.getElementById('sPhone').value.trim(),
+                class_name: document.getElementById('sClass').value.trim(),
+                enrollment_date: document.getElementById('sEnrollDate').value || null,
                 address: document.getElementById('sAddress').value.trim(),
                 height: document.getElementById('sHeight').value ? parseFloat(document.getElementById('sHeight').value) : null
             };
@@ -1262,6 +1317,141 @@
                 const err = await res.json();
                 showToast(err.detail || '操作失败', 'error');
             }
+        }
+
+        // ==================== 复选框 / 批量操作 ====================
+        function toggleSelectAll() {
+            const master = document.getElementById('selectAll');
+            const boxes = document.querySelectorAll('.row-checkbox');
+            boxes.forEach(cb => {
+                cb.checked = master.checked;
+                const id = parseInt(cb.value);
+                if (master.checked) selectedIds.add(id);
+                else selectedIds.delete(id);
+            });
+            updateBatchDeleteBtn();
+        }
+
+        function onCheckChange() {
+            const boxes = document.querySelectorAll('.row-checkbox');
+            selectedIds.clear();
+            boxes.forEach(cb => {
+                if (cb.checked) selectedIds.add(parseInt(cb.value));
+            });
+            document.getElementById('selectAll').checked = boxes.length > 0 && selectedIds.size === boxes.length;
+            updateBatchDeleteBtn();
+        }
+
+        function updateBatchDeleteBtn() {
+            const btn = document.getElementById('batchDeleteBtn');
+            btn.disabled = selectedIds.size === 0;
+            btn.innerText = selectedIds.size > 0 ? `批量删除 (${selectedIds.size})` : '批量删除';
+        }
+
+        // ==================== 导出 CSV ====================
+        function exportCSV() {
+            const keyword = document.getElementById('searchInput').value.trim();
+            const url = `${API}/students/export/?user_id=${currentUserId}&keyword=${encodeURIComponent(keyword)}`;
+            window.open(url, '_blank');
+        }
+
+        // ==================== 批量删除 ====================
+        async function batchDelete() {
+            if (selectedIds.size === 0) return;
+            if (!confirm(`确定要永久删除选中的 ${selectedIds.size} 名学生吗？此操作不可撤销。`)) return;
+            const ids = [...selectedIds].join(',');
+            const res = await fetch(`${API}/students/batch/?user_id=${currentUserId}&ids=${encodeURIComponent(ids)}`, { method: 'DELETE' });
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message, 'success');
+                selectedIds.clear();
+                document.getElementById('selectAll').checked = false;
+                updateBatchDeleteBtn();
+                loadStudents(currentPage);
+                loadStats();
+            } else {
+                const err = await res.json();
+                showToast(err.detail || '操作失败', 'error');
+            }
+        }
+
+        // ==================== 数据统计（饼图） ====================
+        const PIE_COLORS = ['#3B82F6', '#F472B6', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6'];
+
+        async function loadStats() {
+            if (!currentUserId) return;
+            const res = await fetch(`${API}/stats/?user_id=${currentUserId}`);
+            if (res.ok) {
+                const s = await res.json();
+                drawPie(s);
+                buildLegend(s);
+            }
+        }
+
+        function drawPie(stats) {
+            const canvas = document.getElementById('pieChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const cx = canvas.width / 2, cy = canvas.height / 2;
+            const outerR = 90, innerR = 50; // donut
+
+            const slices = [
+                { label: '男生', value: stats.male, color: '#60A5FA' },
+                { label: '女生', value: stats.female, color: '#F472B6' },
+            ].filter(s => s.value > 0);
+
+            const total = slices.reduce((a, b) => a + b.value, 0);
+            if (total === 0) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#64748B';
+                ctx.font = '14px "Fira Sans", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('暂无数据', cx, cy);
+                return;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let angle = -Math.PI / 2; // start from top
+            slices.forEach(s => {
+                const sliceAngle = (s.value / total) * Math.PI * 2;
+                // Outer arc
+                ctx.beginPath();
+                ctx.moveTo(cx + innerR * Math.cos(angle), cy + innerR * Math.sin(angle));
+                ctx.arc(cx, cy, outerR, angle, angle + sliceAngle);
+                ctx.arc(cx, cy, innerR, angle + sliceAngle, angle, true);
+                ctx.closePath();
+                ctx.fillStyle = s.color;
+                ctx.fill();
+                angle += sliceAngle;
+            });
+
+            // Center text
+            ctx.fillStyle = '#F8FAFC';
+            ctx.font = 'bold 28px "Fira Sans", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(total, cx, cy - 6);
+            ctx.font = '12px "Fira Sans", sans-serif';
+            ctx.fillStyle = '#94A3B8';
+            ctx.fillText('总人数', cx, cy + 16);
+        }
+
+        function buildLegend(stats) {
+            const el = document.getElementById('pieLegend');
+            const items = [
+                { label: '男生', value: stats.male, color: '#60A5FA' },
+                { label: '女生', value: stats.female, color: '#F472B6' },
+                { label: '平均分', value: stats.avg_score + '分', color: '#22C55E' },
+                { label: '优秀 (≥85)', value: stats.excellent + '人', color: '#F59E0B' },
+                { label: '不及格 (<60)', value: stats.failed + '人', color: '#EF4444' },
+            ];
+            el.innerHTML = items.map((it, i) => `
+                <div style="display:flex;align-items:center;gap:10px;">
+                    <span style="width:12px;height:12px;border-radius:3px;background:${it.color};flex-shrink:0;"></span>
+                    <span style="color:var(--text-secondary);font-size:0.85rem;flex:1;">${it.label}</span>
+                    <span style="color:var(--text-primary);font-weight:600;font-size:0.9rem;">${it.value}</span>
+                </div>
+            `).join('');
         }
 
         // ==================== 键盘快捷键 ====================
