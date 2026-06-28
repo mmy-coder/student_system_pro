@@ -11,23 +11,29 @@ router = APIRouter(prefix="/stats", tags=["数据统计"])
 async def get_stats(current_user: dict = Depends(get_current_user)):
     """获取仪表盘统计数据"""
     conn = get_db_connection()
+    uid = current_user["user_id"]
     try:
         with conn.cursor() as cur:
             # 总人数
-            cur.execute("SELECT COUNT(*) as total FROM students WHERE is_deleted = 0")
+            cur.execute(
+                "SELECT COUNT(*) as total FROM students WHERE is_deleted = 0 AND user_id = %s",
+                (uid,),
+            )
             total = cur.fetchone()["total"]
 
             # 平均分
             cur.execute(
-                "SELECT AVG(score) as avg_score FROM students WHERE is_deleted = 0"
+                "SELECT AVG(score) as avg_score FROM students WHERE is_deleted = 0 AND user_id = %s",
+                (uid,),
             )
             avg_score = round(float((cur.fetchone()["avg_score"] or 0)), 1)
 
             # 性别分布
             cur.execute(
                 """SELECT gender, COUNT(*) as cnt
-                   FROM students WHERE is_deleted = 0
-                   GROUP BY gender"""
+                   FROM students WHERE is_deleted = 0 AND user_id = %s
+                   GROUP BY gender""",
+                (uid,),
             )
             gender_rows = cur.fetchall()
             male = next((r["cnt"] for r in gender_rows if r["gender"] == "男"), 0)
@@ -35,27 +41,30 @@ async def get_stats(current_user: dict = Depends(get_current_user)):
 
             # 优秀 / 不及格
             cur.execute(
-                "SELECT COUNT(*) as cnt FROM students WHERE is_deleted = 0 AND score >= 85"
+                "SELECT COUNT(*) as cnt FROM students WHERE is_deleted = 0 AND user_id = %s AND score >= 85",
+                (uid,),
             )
             excellent = cur.fetchone()["cnt"]
             cur.execute(
-                "SELECT COUNT(*) as cnt FROM students WHERE is_deleted = 0 AND score < 60"
+                "SELECT COUNT(*) as cnt FROM students WHERE is_deleted = 0 AND user_id = %s AND score < 60",
+                (uid,),
             )
             failed = cur.fetchone()["cnt"]
 
             # 班级统计
             cur.execute(
                 """SELECT class_name, COUNT(*) as cnt
-                   FROM students WHERE is_deleted = 0 AND class_name != ''
-                   GROUP BY class_name ORDER BY cnt DESC"""
+                   FROM students WHERE is_deleted = 0 AND user_id = %s AND class_name != ''
+                   GROUP BY class_name ORDER BY cnt DESC""",
+                (uid,),
             )
             class_stats = cur.fetchall()
 
             # 成绩分布 (每 10 分一段)
-            score_dist = _score_distribution(cur)
+            score_dist = _score_distribution(cur, uid)
 
             # 月度入学趋势 (近 12 个月)
-            monthly = _monthly_enrollment(cur)
+            monthly = _monthly_enrollment(cur, uid)
 
             return StatsResponse(
                 total=total,
@@ -80,7 +89,7 @@ async def get_score_distribution(
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            return {"distribution": _score_distribution(cur)}
+            return {"distribution": _score_distribution(cur, current_user["user_id"])}
     finally:
         conn.close()
 
@@ -93,7 +102,7 @@ async def get_monthly_enrollment(
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            return {"monthly": _monthly_enrollment(cur)}
+            return {"monthly": _monthly_enrollment(cur, current_user["user_id"])}
     finally:
         conn.close()
 
@@ -111,8 +120,9 @@ async def get_class_comparison(
                            COUNT(*) as cnt,
                            AVG(score) as avg_score,
                            SUM(CASE WHEN score >= 85 THEN 1 ELSE 0 END) as excellent_cnt
-                    FROM students WHERE is_deleted = 0 AND class_name != ''
-                    GROUP BY class_name ORDER BY cnt DESC"""
+                    FROM students WHERE is_deleted = 0 AND user_id = %s AND class_name != ''
+                    GROUP BY class_name ORDER BY cnt DESC""",
+                (current_user["user_id"],),
             )
             rows = cur.fetchall()
             for r in rows:
@@ -157,7 +167,7 @@ async def get_audit_logs(
 
 
 # ==================== 辅助函数 ====================
-def _score_distribution(cur) -> list[dict]:
+def _score_distribution(cur, user_id: int) -> list[dict]:
     """计算成绩分布：0-59, 60-69, 70-79, 80-89, 90-100"""
     ranges = [
         ("0-59", 0, 59),
@@ -170,24 +180,25 @@ def _score_distribution(cur) -> list[dict]:
     for label, low, high in ranges:
         cur.execute(
             """SELECT COUNT(*) as cnt FROM students
-               WHERE is_deleted = 0 AND score >= %s AND score <= %s""",
-            (low, high),
+               WHERE is_deleted = 0 AND user_id = %s AND score >= %s AND score <= %s""",
+            (user_id, low, high),
         )
         result.append({"range_label": label, "count": cur.fetchone()["cnt"]})
     return result
 
 
-def _monthly_enrollment(cur) -> list[dict]:
+def _monthly_enrollment(cur, user_id: int) -> list[dict]:
     """过去 12 个月每月新增学生数"""
     try:
         cur.execute("""
             SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as cnt
             FROM students
             WHERE is_deleted = 0
+              AND user_id = %s
               AND created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
             GROUP BY month
             ORDER BY month ASC
-        """)
+        """, (user_id,))
         rows = cur.fetchall()
         return [{"month": r["month"], "count": r["cnt"]} for r in rows]
     except Exception:

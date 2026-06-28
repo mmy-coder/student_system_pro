@@ -50,10 +50,9 @@ async def get_students(
             where = ["is_deleted = 0"]
             params: list = []
 
-            # 数据隔离 — 只查当前用户的数据（管理员可通过特殊参数查看全局，此处简化）
-            # 注：保留灵活度，后续可添加管理员角色
-            # where.append("user_id = %s")
-            # params.append(current_user["user_id"])
+            # 数据隔离 — 只查当前用户的数据
+            where.append("user_id = %s")
+            params.append(current_user["user_id"])
 
             if keyword:
                 where.append("name LIKE %s")
@@ -160,8 +159,8 @@ async def update_student(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name FROM students WHERE id = %s AND is_deleted = 0",
-                (student_id,),
+                "SELECT id, name FROM students WHERE id = %s AND user_id = %s AND is_deleted = 0",
+                (student_id, current_user["user_id"]),
             )
             existing = cur.fetchone()
             if not existing:
@@ -178,8 +177,8 @@ async def update_student(
                 updates.append(f"{key} = %s")
                 params.append(val)
 
-            params.append(student_id)
-            sql = f"UPDATE students SET {', '.join(updates)} WHERE id = %s"
+            params.extend([student_id, current_user["user_id"]])
+            sql = f"UPDATE students SET {', '.join(updates)} WHERE id = %s AND user_id = %s"
             cur.execute(sql, params)
             conn.commit()
 
@@ -204,16 +203,16 @@ async def delete_student(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name FROM students WHERE id = %s AND is_deleted = 0",
-                (student_id,),
+                "SELECT id, name FROM students WHERE id = %s AND user_id = %s AND is_deleted = 0",
+                (student_id, current_user["user_id"]),
             )
             existing = cur.fetchone()
             if not existing:
                 raise HTTPException(status_code=404, detail="未找到该学生")
 
             cur.execute(
-                "UPDATE students SET is_deleted = 1 WHERE id = %s",
-                (student_id,),
+                "UPDATE students SET is_deleted = 1 WHERE id = %s AND user_id = %s",
+                (student_id, current_user["user_id"]),
             )
             conn.commit()
 
@@ -237,16 +236,16 @@ async def restore_student(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name FROM students WHERE id = %s AND is_deleted = 1",
-                (student_id,),
+                "SELECT id, name FROM students WHERE id = %s AND user_id = %s AND is_deleted = 1",
+                (student_id, current_user["user_id"]),
             )
             existing = cur.fetchone()
             if not existing:
                 raise HTTPException(status_code=404, detail="未找到已删除的学生记录")
 
             cur.execute(
-                "UPDATE students SET is_deleted = 0 WHERE id = %s",
-                (student_id,),
+                "UPDATE students SET is_deleted = 0 WHERE id = %s AND user_id = %s",
+                (student_id, current_user["user_id"]),
             )
             conn.commit()
 
@@ -275,8 +274,8 @@ async def batch_delete_students(
         with conn.cursor() as cur:
             placeholders = ",".join(["%s"] * len(id_list))
             cur.execute(
-                f"UPDATE students SET is_deleted = 1 WHERE id IN ({placeholders})",
-                id_list,
+                f"UPDATE students SET is_deleted = 1 WHERE id IN ({placeholders}) AND user_id = %s",
+                id_list + [current_user["user_id"]],
             )
             conn.commit()
 
@@ -302,8 +301,8 @@ async def export_students(
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            where = ["is_deleted = 0"]
-            params = []
+            where = ["is_deleted = 0", "user_id = %s"]
+            params = [current_user["user_id"]]
 
             if keyword:
                 where.append("name LIKE %s")
@@ -376,8 +375,9 @@ async def get_filter_options(
         with conn.cursor() as cur:
             cur.execute(
                 """SELECT DISTINCT class_name FROM students
-                   WHERE is_deleted = 0 AND class_name != ''
-                   ORDER BY class_name"""
+                   WHERE is_deleted = 0 AND user_id = %s AND class_name != ''
+                   ORDER BY class_name""",
+                (current_user["user_id"],),
             )
             classes = [r["class_name"] for r in cur.fetchall()]
             return {"classes": classes}
