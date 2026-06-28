@@ -445,6 +445,11 @@
             <div class="topbar">
                 <h1>学生管理</h1>
                 <div class="topbar-actions">
+                    <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="onCsvFileSelected()">
+                    <button class="btn btn-secondary btn-md" onclick="document.getElementById('csvFileInput').click()">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        导入 CSV
+                    </button>
                     <button class="btn btn-green btn-md" onclick="exportCSV()">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         导出
@@ -611,6 +616,17 @@
             <input class="cmd-input" id="cmdInput" placeholder="输入命令..." onkeydown="handleCmdKey(event)">
         </div>
         <div class="cmd-list" id="cmdList"></div>
+    </div>
+</div>
+
+<!-- Import Result Modal -->
+<div class="modal-overlay hidden" id="importModal">
+    <div class="modal wide">
+        <h3 id="importModalTitle">CSV 导入结果</h3>
+        <div id="importResultContent" style="margin:var(--s-4) 0"></div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary btn-md" onclick="closeImportModal()">关闭</button>
+        </div>
     </div>
 </div>
 
@@ -1184,6 +1200,106 @@ window.batchDelete = async function() {
     }
 };
 
+// ==================== CSV IMPORT ====================
+window.onCsvFileSelected = function() {
+    const fileInput = document.getElementById('csvFileInput');
+    const file = fileInput.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+        toast('请选择 .csv 文件', 'error');
+        fileInput.value = '';
+        return;
+    }
+    // 自动触发上传
+    importCsvFile(file);
+};
+
+async function importCsvFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const token = localStorage.getItem('access_token');
+        const res = await fetch(API + '/students/import-csv', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token },
+            body: formData,
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            showImportResult(data);
+            loadStudents(); // 自动刷新列表
+        } else {
+            toast(extractErrorMessage(data), 'error');
+        }
+    } catch (e) {
+        toast('导入失败，请检查网络连接', 'error');
+    } finally {
+        document.getElementById('csvFileInput').value = '';
+    }
+}
+
+function showImportResult(data) {
+    const modal = document.getElementById('importModal');
+    const title = document.getElementById('importModalTitle');
+    const content = document.getElementById('importResultContent');
+
+    const total = data.total || 0;
+    const success = data.success || 0;
+    const failed = data.failed || 0;
+    const errors = data.errors || [];
+
+    let statusIcon, statusColor;
+    if (failed === 0 && success > 0) {
+        statusIcon = '✅'; statusColor = 'var(--green)';
+        title.textContent = 'CSV 导入完成';
+    } else if (success > 0 && failed > 0) {
+        statusIcon = '⚠️'; statusColor = 'var(--orange)';
+        title.textContent = 'CSV 导入（部分成功）';
+    } else {
+        statusIcon = '❌'; statusColor = 'var(--red)';
+        title.textContent = 'CSV 导入失败';
+    }
+
+    let html = `
+        <div style="display:flex;gap:var(--s-6);margin-bottom:var(--s-5);text-align:center">
+            <div style="flex:1">
+                <div style="font-size:1.8rem;font-weight:700;color:${statusColor}">${statusIcon}</div>
+                <div style="font-size:.78rem;color:var(--text-tertiary)">总行数</div>
+                <div style="font-size:1.4rem;font-weight:600">${total}</div>
+            </div>
+            <div style="flex:1">
+                <div style="font-size:1.8rem;font-weight:700;color:var(--green)">✅</div>
+                <div style="font-size:.78rem;color:var(--text-tertiary)">成功</div>
+                <div style="font-size:1.4rem;font-weight:600;color:var(--green)">${success}</div>
+            </div>
+            <div style="flex:1">
+                <div style="font-size:1.8rem;font-weight:700;color:var(--red)">❌</div>
+                <div style="font-size:.78rem;color:var(--text-tertiary)">失败</div>
+                <div style="font-size:1.4rem;font-weight:600;color:var(--red)">${failed}</div>
+            </div>
+        </div>
+    `;
+
+    if (errors.length > 0) {
+        html += `<div style="max-height:200px;overflow-y:auto;border-top:1px solid var(--separator-subtle);padding-top:var(--s-3)">
+            <div style="font-size:.75rem;font-weight:600;color:var(--text-tertiary);margin-bottom:var(--s-2)">失败详情</div>`;
+        errors.forEach(e => {
+            html += `<div style="font-size:.82rem;color:var(--red);padding:var(--s-1) 0;border-bottom:1px solid var(--separator-subtle)">第 ${e.row} 行：${escHtml(e.reason)}</div>`;
+        });
+        html += '</div>';
+    }
+
+    content.innerHTML = html;
+    modal.classList.remove('hidden');
+}
+
+window.closeImportModal = function() {
+    document.getElementById('importModal').classList.add('hidden');
+};
+
 // ==================== EXPORT ====================
 window.exportCSV = function() {
     const keyword = document.getElementById('searchInput')?.value.trim() || '';
@@ -1486,6 +1602,7 @@ document.addEventListener('keydown', function(e) {
 // Close modals on overlay click
 document.getElementById('deleteModal').addEventListener('click', function(e) { if (e.target === this) closeDeleteModal(); });
 document.getElementById('studentModal').addEventListener('click', function(e) { if (e.target === this) closeStudentModal(); });
+document.getElementById('importModal').addEventListener('click', function(e) { if (e.target === this) closeImportModal(); });
 
 // Expose to global scope
 window.navigateTo = navigateTo;

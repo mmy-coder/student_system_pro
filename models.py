@@ -164,3 +164,16 @@ class ChangePasswordRequest(BaseModel):
         if len(v) < 6:
             raise ValueError("新密码至少6位")
         return v
+
+
+# ==================== CSV 导入模型 ====================
+class ImportError(BaseModel):
+    row: int
+    reason: str
+
+
+class ImportResult(BaseModel):
+    total: int
+    success: int
+    failed: int
+    errors: list[ImportError] = []

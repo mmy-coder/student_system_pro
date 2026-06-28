@@ -1,11 +1,11 @@
-"""学生管理路由 — CRUD + 批量操作 + CSV 导出"""
+"""学生管理路由 — CRUD + 批量操作 + CSV 导出 + CSV 导入"""
 import csv
 import io
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from database import get_db_connection
 from auth import get_current_user
-from models import StudentCreate, StudentUpdate, PaginatedResponse, MessageResponse
+from models import StudentCreate, StudentUpdate, PaginatedResponse, MessageResponse, ImportResult, ImportError
 
 router = APIRouter(prefix="/students", tags=["学生管理"])
 
@@ -362,6 +362,182 @@ async def export_students(
             )
     finally:
         conn.close()
+
+
+# ==================== CSV 批量导入 ====================
+# 必填字段与可选字段定义
+REQUIRED_HEADERS = {"name", "age", "gender", "score"}
+OPTIONAL_HEADERS = {"phone", "class_name", "enrollment_date", "address", "height"}
+ALL_ALLOWED_HEADERS = REQUIRED_HEADERS | OPTIONAL_HEADERS
+FORBIDDEN_HEADERS = {"user_id", "is_deleted", "id", "created_at", "updated_at"}
+
+
+@router.post("/import-csv", response_model=ImportResult)
+async def import_csv(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    request: Request = None,
+):
+    """批量导入 CSV 学生数据 — 绑定当前用户，逐行校验，部分失败不影响合法行"""
+    # 1. 校验文件类型
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="仅支持 .csv 文件")
+
+    # 2. 读取文件内容
+    try:
+        content = (await file.read()).decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="文件编码错误，请使用 UTF-8 编码的 CSV")
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="CSV 文件为空")
+
+    # 3. 解析 CSV
+    reader = csv.DictReader(io.StringIO(content))
+    headers = [h.strip() for h in (reader.fieldnames or [])]
+
+    if not headers:
+        raise HTTPException(status_code=400, detail="未检测到 CSV 表头")
+
+    # 4. 校验表头
+    header_set = set(headers)
+    forbidden_found = header_set & FORBIDDEN_HEADERS
+    if forbidden_found:
+        raise HTTPException(
+            status_code=400,
+            detail=f"CSV 不允许包含以下字段：{', '.join(sorted(forbidden_found))}",
+        )
+
+    missing = REQUIRED_HEADERS - header_set
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"缺少必填字段：{', '.join(sorted(missing))}",
+        )
+
+    # 5. 逐行解析 & 校验
+    rows_to_insert = []
+    errors = []
+    uid = current_user["user_id"]
+    row_num = 0  # 数据行号（不含表头）
+
+    for row in reader:
+        row_num += 1
+        # 跳过空行
+        if all(not v.strip() for v in row.values() if v):
+            continue
+
+        # 只保留允许的字段
+        filtered = {k.strip(): (v.strip() if v else "") for k, v in row.items() if k.strip() in ALL_ALLOWED_HEADERS}
+
+        # 校验必填字段
+        name = filtered.get("name", "")
+        age_str = filtered.get("age", "")
+        gender = filtered.get("gender", "")
+        score_str = filtered.get("score", "")
+
+        if not name:
+            errors.append({"row": row_num, "reason": "姓名为必填项"})
+            continue
+
+        # 年龄必须是整数
+        try:
+            age = int(age_str)
+            if age < 1 or age > 150:
+                errors.append({"row": row_num, "reason": f"年龄必须在 1-150 之间，当前值: {age}"})
+                continue
+        except (ValueError, TypeError):
+            errors.append({"row": row_num, "reason": f"年龄必须是整数，当前值: '{age_str}'"})
+            continue
+
+        # 性别
+        if gender not in ("男", "女"):
+            errors.append({"row": row_num, "reason": f"性别必须是 '男' 或 '女'，当前值: '{gender}'"})
+            continue
+
+        # 成绩
+        try:
+            score = float(score_str)
+            if score < 0 or score > 100:
+                errors.append({"row": row_num, "reason": f"成绩必须在 0-100 之间，当前值: {score}"})
+                continue
+        except (ValueError, TypeError):
+            errors.append({"row": row_num, "reason": f"成绩必须是数字，当前值: '{score_str}'"})
+            continue
+
+        # 可选字段清洗
+        phone = filtered.get("phone", "")[:20]
+        class_name = filtered.get("class_name", "")[:50]
+        enrollment_date_str = filtered.get("enrollment_date", "")
+        address = filtered.get("address", "")[:200]
+
+        # 入学日期校验
+        enrollment_date = None
+        if enrollment_date_str:
+            import re
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", enrollment_date_str):
+                enrollment_date = enrollment_date_str
+            else:
+                errors.append({"row": row_num, "reason": f"入学日期格式错误，应为 YYYY-MM-DD，当前值: '{enrollment_date_str}'"})
+                continue
+
+        # 身高
+        height = None
+        height_str = filtered.get("height", "")
+        if height_str:
+            try:
+                height = float(height_str)
+                if height < 0 or height > 300:
+                    errors.append({"row": row_num, "reason": f"身高必须在 0-300 之间，当前值: {height}"})
+                    continue
+            except (ValueError, TypeError):
+                errors.append({"row": row_num, "reason": f"身高必须是数字，当前值: '{height_str}'"})
+                continue
+
+        rows_to_insert.append((
+            uid, name, age, gender, score, phone, class_name,
+            enrollment_date, address, height,
+        ))
+
+    # 6. 如果所有行都失败且有错误信息
+    if not rows_to_insert and errors:
+        return ImportResult(
+            total=row_num,
+            success=0,
+            failed=len(errors),
+            errors=[ImportError(**e) for e in errors],
+        )
+
+    if not rows_to_insert and not errors:
+        return ImportResult(total=0, success=0, failed=0, errors=[])
+
+    # 7. 批量插入（参数化 SQL）
+    conn = get_db_connection()
+    success_count = 0
+    try:
+        with conn.cursor() as cur:
+            sql = """INSERT INTO students
+                     (user_id, name, age, gender, score, phone, class_name,
+                      enrollment_date, address, height)
+                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+            cur.executemany(sql, rows_to_insert)
+            success_count = cur.rowcount
+            conn.commit()
+
+            _audit_log(conn, uid, "IMPORT_CSV", None,
+                       f"CSV 导入 {success_count} 条学生数据（共 {row_num} 行，失败 {len(errors)} 行）", request)
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=f"数据库写入失败: {e}")
+    finally:
+        conn.close()
+
+    return ImportResult(
+        total=row_num,
+        success=success_count,
+        failed=len(errors),
+        errors=[ImportError(**e) for e in errors],
+    )
 
 
 # ==================== 获取筛选选项 ====================
