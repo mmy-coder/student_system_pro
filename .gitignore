@@ -1,7 +1,31 @@
+# 环境变量
+.env
+
+# 虚拟环境
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# MCP / 工具
 .playwright-mcp/
 page-snapshot*.md
-CLAUDE.md
-venv/
-__pycache__/
-.env
-*.pyc
+
+# 日志
+*.log
+/tmp/

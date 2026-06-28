@@ -336,10 +336,20 @@ async def export_students(
                 "入学日期", "地址", "身高(cm)"
             ])
             for row in data:
+                # 日期转 YYYY/MM/DD 格式，避免 WPS/Excel 显示 ######
+                enroll = row.get("enrollment_date")
+                if enroll:
+                    if hasattr(enroll, 'strftime'):
+                        enroll_str = enroll.strftime("%Y/%m/%d")
+                    else:
+                        enroll_str = str(enroll).replace("-", "/")
+                else:
+                    enroll_str = ""
+
                 writer.writerow([
                     row["id"], row["name"], row["age"], row["gender"],
                     row["score"], row.get("phone", ""), row.get("class_name", ""),
-                    str(row["enrollment_date"]) if row.get("enrollment_date") else "",
+                    enroll_str,
                     row.get("address", ""), row.get("height", "")
                 ])
             output.seek(0)

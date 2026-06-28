@@ -4,7 +4,7 @@ import os
 # ==================== 数据库 ====================
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "200561@Mayun")  # 本地开发默认密码，生产请用环境变量
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")  # 必须通过环境变量或 .env 文件设置
 DB_NAME = os.getenv("DB_NAME", "student_pro_db")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_CHARSET = "utf8mb4"

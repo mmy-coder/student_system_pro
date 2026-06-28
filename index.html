@@ -716,7 +716,7 @@ window.handleAuth = async function() {
                 toast(`欢迎回来，${data.username} ✨`, 'success');
             }
         } else {
-            toast(data.detail || '操作失败', 'error');
+            toast(extractErrorMessage(data), 'error');
         }
     } catch(e) {
         toast('网络错误，请重试', 'error');
@@ -762,28 +762,28 @@ function authHeaders() {
 async function apiGet(url) {
     const res = await fetch(API + url, { headers: authHeaders() });
     if (res.status === 401) { handleSessionExpired(); throw new Error('Session expired'); }
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || '请求失败'); }
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(extractErrorMessage(e)); }
     return res.json();
 }
 
 async function apiPost(url, body) {
     const res = await fetch(API + url, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
     if (res.status === 401) { handleSessionExpired(); throw new Error('Session expired'); }
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || '请求失败'); }
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(extractErrorMessage(e)); }
     return res.json();
 }
 
 async function apiPut(url, body) {
     const res = await fetch(API + url, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
     if (res.status === 401) { handleSessionExpired(); throw new Error('Session expired'); }
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || '请求失败'); }
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(extractErrorMessage(e)); }
     return res.json();
 }
 
 async function apiDelete(url) {
     const res = await fetch(API + url, { method: 'DELETE', headers: authHeaders() });
     if (res.status === 401) { handleSessionExpired(); throw new Error('Session expired'); }
-    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.detail || '请求失败'); }
+    if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(extractErrorMessage(e)); }
     return res.json();
 }
 
@@ -1415,6 +1415,23 @@ function escHtml(s) {
     const div = document.createElement('div');
     div.textContent = s;
     return div.innerHTML;
+}
+
+// 从 FastAPI 验证错误中提取可读消息
+function extractErrorMessage(data) {
+    if (!data) return '操作失败';
+    // FastAPI HTTPException: {"detail": "字符串消息"}
+    if (typeof data.detail === 'string') return data.detail;
+    // FastAPI 422 验证错误: {"detail": [{"msg": "...", "loc": [...]}]}
+    if (Array.isArray(data.detail) && data.detail.length > 0) {
+        return data.detail.map(e => {
+            const field = e.loc ? e.loc.filter(l => l !== 'body').join('.') : '';
+            return field ? `${field}: ${e.msg}` : e.msg;
+        }).join('; ');
+    }
+    // 兜底
+    if (data.detail) return JSON.stringify(data.detail);
+    return '操作失败';
 }
 
 function destroyChart(id) {

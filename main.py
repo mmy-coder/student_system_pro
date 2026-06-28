@@ -1,5 +1,20 @@
 """Student Hub — 企业级学生数据管理平台 (FastAPI + MySQL)"""
+import os
 import sys
+from pathlib import Path
+
+# 加载 .env 文件（必须在 config 导入之前）
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _, value = line.partition("=")
+                key, value = key.strip(), value.strip()
+                if key not in os.environ:
+                    os.environ[key] = value
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
