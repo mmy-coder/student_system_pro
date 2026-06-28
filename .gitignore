@@ -26,6 +26,9 @@ Thumbs.db
 .playwright-mcp/
 page-snapshot*.md
 
+# AI 工具
+CLAUDE.md
+
 # 日志
 *.log
 /tmp/
