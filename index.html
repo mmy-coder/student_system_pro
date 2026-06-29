@@ -250,9 +250,13 @@
         .toast{display:flex;align-items:center;gap:var(--s-3);padding:var(--s-3) var(--s-4);background:var(--bg-secondary);border:1px solid var(--separator);border-radius:var(--r-lg);box-shadow:var(--shadow-lg);pointer-events:auto;animation:toastIn var(--dur-slow) var(--ease-spring);font-size:.85rem;position:relative;overflow:hidden}
         .toast-success{border-color:rgba(48,209,88,0.3)}
         .toast-error{border-color:rgba(255,69,58,0.3)}
+        .toast-warning{border-color:rgba(255,159,10,0.4)}
+        .toast-info{border-color:rgba(10,132,255,0.3)}
         .toast .toast-progress{position:absolute;bottom:0;left:0;height:3px;background:var(--blue);border-radius:0 0 3px 3px;animation:toastProgress 4s linear forwards}
         .toast-success .toast-progress{background:var(--green)}
         .toast-error .toast-progress{background:var(--red)}
+        .toast-warning .toast-progress{background:var(--orange)}
+        .toast-info .toast-progress{background:var(--blue)}
         @keyframes toastIn{from{opacity:0;transform:translateX(60px)}to{opacity:1;transform:translateX(0)}}
         @keyframes toastProgress{from{width:100%}to{width:0%}}
 
@@ -266,6 +270,44 @@
 
         /* Utility */
         .hidden { display: none !important; }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+        .gap-2 { gap: var(--s-2); }
+        .gap-3 { gap: var(--s-3); }
+        .gap-4 { gap: var(--s-4); }
+        .text-muted { color: var(--text-tertiary); font-size: .82rem; }
+        .text-secondary { color: var(--text-secondary); }
+        .mono { font-family: var(--font-mono); }
+        .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* ================================================================
+           BREADCRUMB
+           ================================================================ */
+        .breadcrumb { display: flex; align-items: center; gap: var(--s-2); font-size: .78rem; color: var(--text-tertiary); margin-bottom: var(--s-2) }
+        .breadcrumb a { color: var(--text-tertiary); text-decoration: none; transition: color var(--dur-fast) }
+        .breadcrumb a:hover { color: var(--blue); text-decoration: none }
+        .breadcrumb .sep { color: var(--text-quaternary) }
+        .breadcrumb .current { color: var(--text-secondary) }
+
+        /* ================================================================
+           SYSTEM INFO
+           ================================================================ */
+        .sysinfo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-3) }
+        .sysinfo-item { padding: var(--s-3); background: var(--bg-secondary); border-radius: var(--r-sm) }
+        .sysinfo-item label { font-size: .68rem; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; display: block; margin-bottom: var(--s-1) }
+        .sysinfo-item span { font-size: .88rem; color: var(--text-primary); font-family: var(--font-mono) }
+        .sysinfo-item .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px }
+        .status-ok { background: var(--green); box-shadow: 0 0 6px rgba(48,209,88,0.5) }
+        .status-err { background: var(--red); box-shadow: 0 0 6px rgba(255,69,58,0.5) }
+
+        /* ================================================================
+           DASHBOARD MINI-TABLE
+           ================================================================ */
+        .mini-table { width: 100%; border-collapse: collapse; font-size: .82rem }
+        .mini-table thead th { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-tertiary); padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--separator-subtle) }
+        .mini-table tbody td { padding: 8px 10px; border-bottom: 1px solid var(--separator-subtle); color: var(--text-secondary) }
+        .mini-table tbody tr:hover td { background: rgba(255,255,255,0.02); color: var(--text-primary) }
+        .mini-table .view-all { text-align: center; padding: var(--s-3) 0 }
+        .mini-table .view-all a { font-size: .82rem; font-weight: 500; color: var(--blue) }
 
         /* ================================================================
            COMMAND PALETTE
@@ -364,6 +406,9 @@
             </a>
         </nav>
         <div class="sidebar-bottom" id="sidebarBottom">
+            <div style="font-size:.65rem;color:var(--text-tertiary);padding:0 var(--s-2);margin-bottom:var(--s-1)">
+                <kbd style="font-family:var(--font-mono);background:var(--bg-tertiary);padding:1px 5px;border-radius:3px">⌘K</kbd> 命令面板 · <kbd style="font-family:var(--font-mono);background:var(--bg-tertiary);padding:1px 5px;border-radius:3px">?</kbd> 快捷键
+            </div>
             <div class="sidebar-user" id="sidebarUser" onclick="navigateTo('settings')">
                 <div class="avatar" id="sideAvatar" style="background:linear-gradient(135deg,var(--blue),var(--purple))">U</div>
                 <div class="user-info">
@@ -408,10 +453,15 @@
         <div class="page" id="page-dashboard">
             <div class="topbar">
                 <div>
+                    <div class="breadcrumb"><a href="#dashboard">首页</a> <span class="sep">/</span> <span class="current">仪表盘</span></div>
                     <h1 id="greetingMsg">早上好</h1>
-                    <small id="currentDate"></small>
+                    <small id="currentDate"></small><br>
+            <small id="lastRefreshed" style="font-size:.7rem;color:var(--text-tertiary)"></small>
                 </div>
                 <div class="topbar-actions">
+                    <button class="btn btn-ghost btn-md" onclick="loadDashboard()" title="刷新数据">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </button>
                     <button class="btn btn-primary btn-md" onclick="navigateTo('students');setTimeout(()=>showAddModal(),300)">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
                         添加学生
@@ -433,17 +483,26 @@
                 <div class="card chart-card"><h3 style="margin-bottom:var(--s-4)">🍩 性别比例</h3><div style="position:relative;height:280px"><canvas id="chartGenderPie"></canvas></div></div>
             </div>
 
-            <!-- Recent Activity -->
-            <div class="card" style="margin-top:var(--s-4)">
-                <div class="card-header"><div class="icon-circle icon-blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><h3 style="margin:0">最近操作</h3></div>
-                <div id="recentActivity" style="display:flex;flex-direction:column;gap:var(--s-2)"></div>
+            <!-- Recent Students + Activity -->
+            <div class="card-grid" style="margin-top:var(--s-4)">
+                <div class="card">
+                    <div class="card-header"><div class="icon-circle icon-green"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><h3 style="margin:0">最近添加的学生</h3></div>
+                    <div id="recentStudents"></div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><div class="icon-circle icon-blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><h3 style="margin:0">最近操作</h3></div>
+                    <div id="recentActivity" style="display:flex;flex-direction:column;gap:var(--s-2)"></div>
+                </div>
             </div>
         </div>
 
         <!-- ========== STUDENTS PAGE ========== -->
         <div class="page" id="page-students">
             <div class="topbar">
-                <h1>学生管理</h1>
+                <div>
+                    <div class="breadcrumb"><a href="#dashboard">首页</a> <span class="sep">/</span> <span class="current">学生管理</span></div>
+                    <h1>学生管理</h1>
+                </div>
                 <div class="topbar-actions">
                     <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="onCsvFileSelected()">
                     <button class="btn btn-secondary btn-md" onclick="document.getElementById('csvFileInput').click()">
@@ -466,7 +525,7 @@
                 <div style="display:flex;gap:var(--s-3);align-items:center;flex-wrap:wrap">
                     <div style="position:relative;flex:1;min-width:180px">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2" style="position:absolute;left:12px;top:10px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                        <input class="input input-sm" type="text" id="searchInput" placeholder="搜索学生姓名..." style="padding-left:36px" onkeydown="if(event.key==='Enter')loadStudents()">
+                        <input class="input input-sm" type="text" id="searchInput" placeholder="搜索学生姓名..." style="padding-left:36px" oninput="onSearchInput()">
                     </div>
                     <select class="input input-sm" id="filterClass" onchange="loadStudents()" style="width:140px"><option value="">全部班级</option></select>
                     <select class="input input-sm" id="filterGender" onchange="loadStudents()" style="width:120px"><option value="">全部性别</option><option value="男">男</option><option value="女">女</option></select>
@@ -523,7 +582,14 @@
 
         <!-- ========== ANALYTICS PAGE ========== -->
         <div class="page" id="page-analytics">
-            <div class="topbar"><h1>数据分析</h1></div>
+            <div class="topbar">
+                <div>
+                    <div class="breadcrumb"><a href="#dashboard">首页</a> <span class="sep">/</span> <span class="current">数据分析</span></div>
+                    <h1>数据分析</h1>
+                </div>
+            </div>
+            <!-- Analytics Summary Cards -->
+            <div class="stat-grid" id="analyticsStatCards" style="margin-bottom:var(--s-6)"></div>
             <div class="card-grid">
                 <div class="card chart-card"><h3 style="margin-bottom:var(--s-4)">📊 成绩分布</h3><div style="position:relative;height:280px"><canvas id="analyticsScoreDist"></canvas></div></div>
                 <div class="card chart-card"><h3 style="margin-bottom:var(--s-4)">🏫 班级成绩对比</h3><div style="position:relative;height:280px"><canvas id="analyticsClassComp"></canvas></div></div>
@@ -536,7 +602,12 @@
 
         <!-- ========== SETTINGS PAGE ========== -->
         <div class="page" id="page-settings">
-            <div class="topbar"><h1>设置</h1></div>
+            <div class="topbar">
+                <div>
+                    <div class="breadcrumb"><a href="#dashboard">首页</a> <span class="sep">/</span> <span class="current">设置</span></div>
+                    <h1>设置</h1>
+                </div>
+            </div>
             <div class="card" style="max-width:560px;margin-bottom:var(--s-4)">
                 <h3 style="margin-bottom:var(--s-5)">👤 个人信息</h3>
                 <div style="display:flex;align-items:center;gap:var(--s-5);margin-bottom:var(--s-6)">
@@ -550,6 +621,16 @@
                 <div class="input-group"><label>新密码</label><input class="input" type="password" id="cpNew" placeholder="输入新密码（至少6位，含字母+数字）"></div>
                 <div class="input-group"><label>确认新密码</label><input class="input" type="password" id="cpConfirm" placeholder="再次输入新密码"></div>
                 <button class="btn btn-primary btn-md" onclick="changePassword()">更新密码</button>
+            </div>
+            <!-- System Info -->
+            <div class="card" style="max-width:560px;margin-bottom:var(--s-4)">
+                <h3 style="margin-bottom:var(--s-5)">🖥️ 系统信息</h3>
+                <div class="sysinfo-grid" id="sysInfoGrid">
+                    <div class="sysinfo-item"><label>应用版本</label><span class="skeleton sk-row w60" style="height:20px"></span></div>
+                    <div class="sysinfo-item"><label>数据库状态</label><span class="skeleton sk-row w60" style="height:20px"></span></div>
+                    <div class="sysinfo-item"><label>Python 版本</label><span class="skeleton sk-row w60" style="height:20px"></span></div>
+                    <div class="sysinfo-item"><label>服务器时间</label><span class="skeleton sk-row w60" style="height:20px"></span></div>
+                </div>
             </div>
             <div class="card" style="max-width:560px;border:1px solid rgba(255,69,58,0.25)">
                 <h3 style="color:var(--red);margin-bottom:var(--s-2)">⚠️ 危险区域</h3>
@@ -815,15 +896,44 @@ function handleSessionExpired() {
 // ==================== DASHBOARD ====================
 async function loadDashboard() {
     try {
-        const stats = await apiGet('/stats/');
-        const audit = await apiGet('/stats/audit/?size=5');
-        renderStatCards(stats);
-        renderDashboardCharts(stats);
-        renderRecentActivity(audit.data || []);
+        const data = await apiGet('/stats/dashboard');
+        renderStatCards(data);
+        renderDashboardCharts(data);
+        renderRecentStudents(data.recent_students || []);
+        renderRecentActivity(data.recent_logs || []);
         updateGreeting();
+        const el = document.getElementById('lastRefreshed');
+        if (el) el.textContent = '最后更新：' + new Date().toLocaleTimeString('zh-CN');
     } catch(e) {
         console.error('Dashboard load error:', e);
     }
+}
+
+function renderRecentStudents(students) {
+    const el = document.getElementById('recentStudents');
+    if (!students.length) {
+        el.innerHTML = '<div class="empty-state" style="padding:var(--s-6)"><h3 style="font-size:.9rem">暂无学生数据</h3><p style="font-size:.78rem">点击右上角「添加学生」开始录入</p></div>';
+        return;
+    }
+    el.innerHTML = `
+        <table class="mini-table">
+            <thead><tr><th>姓名</th><th>性别</th><th>成绩</th><th>班级</th><th>添加时间</th></tr></thead>
+            <tbody>
+                ${students.map(s => {
+                    const sc = s.score >= 85 ? 'score-high' : s.score >= 60 ? 'score-mid' : 'score-low';
+                    const gc = s.gender === '男' ? 'badge-male' : 'badge-female';
+                    return `<tr onclick="navigateTo('students');setTimeout(()=>openDetail(${s.id}),400)" style="cursor:pointer">
+                        <td style="font-weight:500;color:var(--text-primary)">${escHtml(s.name)}</td>
+                        <td><span class="badge ${gc}">${escHtml(s.gender||'-')}</span></td>
+                        <td><span class="score ${sc}">${s.score}</span></td>
+                        <td>${escHtml(s.class_name||'-')}</td>
+                        <td style="font-size:.75rem;color:var(--text-tertiary)">${s.created_at ? new Date(s.created_at).toLocaleDateString('zh-CN') : '-'}</td>
+                    </tr>`;
+                }).join('')}
+            </tbody>
+        </table>
+        <div class="view-all"><a href="#students">查看全部学生 →</a></div>
+    `;
 }
 
 function updateGreeting() {
@@ -969,8 +1079,8 @@ function renderTable(result) {
                     <td>${escHtml(s.class_name||'-')}</td>
                     <td style="white-space:nowrap">${s.enrollment_date || '-'}</td>
                     <td style="text-align:right" onclick="event.stopPropagation()">
-                        <button class="btn btn-ghost btn-sm" onclick="showEditModal(${s.id})" title="编辑">✏️</button>
-                        <button class="btn btn-ghost btn-sm" onclick="openDeleteModal(${s.id})" title="删除">🗑️</button>
+                        <button class="btn btn-ghost btn-sm" onclick="showEditModal(${s.id})" title="编辑学生信息">✎</button>
+                        <button class="btn btn-ghost btn-sm" onclick="openDeleteModal(${s.id})" title="删除学生">✕</button>
                     </td>
                 </tr>
             `;
@@ -1324,8 +1434,19 @@ async function loadAnalytics() {
     try {
         const stats = await apiGet('/stats/');
         const classComp = await apiGet('/stats/class-comparison');
+        renderAnalyticsSummary(stats);
         renderAnalyticsCharts(stats, classComp.classes || []);
     } catch(e) { console.error(e); }
+}
+
+function renderAnalyticsSummary(stats) {
+    const total = stats.total || 0;
+    document.getElementById('analyticsStatCards').innerHTML = `
+        <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">学生总数</div><div class="stat-value" style="color:var(--blue)">${total}</div></div>
+        <div class="stat-card"><div class="stat-icon">📊</div><div class="stat-label">平均成绩</div><div class="stat-value" style="color:var(--green)">${stats.avg_score || 0}</div></div>
+        <div class="stat-card"><div class="stat-icon">🏆</div><div class="stat-label">优秀人数</div><div class="stat-value" style="color:var(--orange)">${stats.excellent || 0}</div></div>
+        <div class="stat-card"><div class="stat-icon">📉</div><div class="stat-label">不及格人数</div><div class="stat-value" style="color:var(--red)">${stats.failed || 0}</div></div>
+    `;
 }
 
 function renderAnalyticsCharts(stats, classes) {
@@ -1407,6 +1528,26 @@ async function loadSettings() {
         document.getElementById('settingsMemberSince').textContent = '注册于 ' + (user.created_at ? new Date(user.created_at).toLocaleDateString('zh-CN') : '—');
         updateUserUI();
     } catch(e) { console.error(e); }
+    loadSystemInfo();
+}
+
+async function loadSystemInfo() {
+    try {
+        const res = await fetch(API + '/api/system-info');
+        const info = await res.json();
+        const grid = document.getElementById('sysInfoGrid');
+        const statusIcon = info.database_connected
+            ? '<span class="status-dot status-ok"></span>已连接'
+            : '<span class="status-dot status-err"></span>未连接';
+        grid.innerHTML = `
+            <div class="sysinfo-item"><label>应用版本</label><span>${escHtml(info.app_version)}</span></div>
+            <div class="sysinfo-item"><label>数据库状态</label><span>${statusIcon}</span></div>
+            <div class="sysinfo-item"><label>Python 版本</label><span>${escHtml(info.python_version)}</span></div>
+            <div class="sysinfo-item"><label>服务器时间</label><span>${escHtml(info.server_time)}</span></div>
+        `;
+    } catch(e) {
+        console.error('System info error:', e);
+    }
 }
 
 window.changePassword = async function() {
@@ -1508,9 +1649,11 @@ window.handleLogout = window.logout;
 function toast(msg, type, undoCallback) {
     const container = document.getElementById('toastContainer');
     const el = document.createElement('div');
-    el.className = 'toast toast-' + type;
+    const clsType = ['success','error','warning','info'].includes(type) ? type : 'info';
+    el.className = 'toast toast-' + clsType;
+    const iconMap = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
     el.innerHTML = `
-        <span>${type==='success'?'✅':type==='error'?'❌':'ℹ️'}</span>
+        <span>${iconMap[type] || 'ℹ️'}</span>
         <span style="flex:1">${escHtml(msg)}</span>
         ${undoCallback ? '<button class="btn btn-ghost btn-sm" style="color:var(--blue)">撤销</button>' : ''}
         <button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.parentElement.remove()">✕</button>
@@ -1526,6 +1669,15 @@ function toast(msg, type, undoCallback) {
 }
 
 // ==================== UTILITIES ====================
+let searchDebounceTimer = null;
+window.onSearchInput = function() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+        currentPage = 1;
+        loadStudents();
+    }, 350);
+};
+
 function escHtml(s) {
     if (typeof s !== 'string') return s;
     const div = document.createElement('div');

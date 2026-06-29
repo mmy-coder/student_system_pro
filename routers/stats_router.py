@@ -7,6 +7,92 @@ from models import StatsResponse
 router = APIRouter(prefix="/stats", tags=["数据统计"])
 
 
+# ==================== 仪表盘汇总（一站式） ====================
+@router.get("/dashboard")
+async def get_dashboard_summary(current_user: dict = Depends(get_current_user)):
+    """返回仪表盘所需的全部数据：统计 + 最近学生 + 最近操作"""
+    conn = get_db_connection()
+    uid = current_user["user_id"]
+    try:
+        with conn.cursor() as cur:
+            # 统计
+            cur.execute(
+                "SELECT COUNT(*) as total FROM students WHERE is_deleted = 0 AND user_id = %s",
+                (uid,),
+            )
+            total = cur.fetchone()["total"]
+
+            cur.execute(
+                "SELECT AVG(score) as avg_score FROM students WHERE is_deleted = 0 AND user_id = %s",
+                (uid,),
+            )
+            avg_score = round(float((cur.fetchone()["avg_score"] or 0)), 1)
+
+            cur.execute(
+                """SELECT gender, COUNT(*) as cnt
+                   FROM students WHERE is_deleted = 0 AND user_id = %s
+                   GROUP BY gender""",
+                (uid,),
+            )
+            gender_rows = cur.fetchall()
+            male = next((r["cnt"] for r in gender_rows if r["gender"] == "男"), 0)
+            female = next((r["cnt"] for r in gender_rows if r["gender"] == "女"), 0)
+
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM students WHERE is_deleted = 0 AND user_id = %s AND score >= 85",
+                (uid,),
+            )
+            excellent = cur.fetchone()["cnt"]
+            cur.execute(
+                "SELECT COUNT(*) as cnt FROM students WHERE is_deleted = 0 AND user_id = %s AND score < 60",
+                (uid,),
+            )
+            failed = cur.fetchone()["cnt"]
+
+            # 最近添加的 5 名学生
+            cur.execute(
+                """SELECT id, name, age, gender, score, class_name, enrollment_date, created_at
+                   FROM students WHERE is_deleted = 0 AND user_id = %s
+                   ORDER BY created_at DESC LIMIT 5""",
+                (uid,),
+            )
+            recent_students = cur.fetchall()
+            for r in recent_students:
+                if r.get("enrollment_date"):
+                    r["enrollment_date"] = str(r["enrollment_date"])
+                if r.get("created_at"):
+                    r["created_at"] = str(r["created_at"])
+
+            # 最近 5 条审计日志
+            cur.execute(
+                """SELECT action, entity_type, entity_id, detail, created_at
+                   FROM audit_logs WHERE user_id = %s
+                   ORDER BY created_at DESC LIMIT 5""",
+                (uid,),
+            )
+            recent_logs = cur.fetchall()
+            for r in recent_logs:
+                if r.get("created_at"):
+                    r["created_at"] = str(r["created_at"])
+
+            # 成绩分布
+            score_dist = _score_distribution(cur, uid)
+
+            return {
+                "total": total,
+                "avg_score": avg_score,
+                "male": male,
+                "female": female,
+                "excellent": excellent,
+                "failed": failed,
+                "score_distribution": score_dist,
+                "recent_students": recent_students,
+                "recent_logs": recent_logs,
+            }
+    finally:
+        conn.close()
+
+
 @router.get("/", response_model=StatsResponse)
 async def get_stats(current_user: dict = Depends(get_current_user)):
     """获取仪表盘统计数据"""

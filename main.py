@@ -15,6 +15,8 @@ if env_path.exists():
                 if key not in os.environ:
                     os.environ[key] = value
 
+import uuid
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +52,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ==================== 请求追踪中间件 ====================
+@app.middleware("http")
+async def request_tracing_middleware(request: Request, call_next):
+    """为每个请求添加 X-Request-ID 并记录响应时间"""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4())[:8])
+    request.state.request_id = request_id
+    start = time.time()
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time"] = f"{(time.time() - start)*1000:.0f}ms"
+    return response
 
 
 # ==================== 限流中间件 ====================
@@ -122,3 +137,26 @@ async def index():
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": APP_VERSION}
+
+
+@app.get("/api/system-info")
+async def system_info():
+    """返回系统信息（供前端设置页展示）"""
+    import platform
+    from datetime import datetime
+    db_ok = False
+    try:
+        from database import get_db_connection
+        conn = get_db_connection()
+        conn.ping()
+        conn.close()
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "app_title": APP_TITLE,
+        "app_version": APP_VERSION,
+        "python_version": platform.python_version(),
+        "database_connected": db_ok,
+        "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
