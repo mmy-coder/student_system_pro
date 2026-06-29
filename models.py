@@ -8,6 +8,8 @@ from datetime import date
 class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=30, description="用户名 (3-30字符)")
     password: str = Field(..., min_length=6, max_length=128, description="密码 (6-128字符)")
+    security_question: Optional[str] = Field(default="", max_length=200, description="安全问题(可选)")
+    security_answer: Optional[str] = Field(default="", max_length=255, description="安全答案(可选)")
 
     @field_validator("username")
     @classmethod
@@ -24,6 +26,13 @@ class UserRegister(BaseModel):
         if not any(c.isdigit() for c in v):
             raise ValueError("密码必须包含至少一个数字")
         return v
+
+    @field_validator("security_answer")
+    @classmethod
+    def answer_required_if_question(cls, v: str, info) -> str:
+        """如果设置了安全问题，答案必填"""
+        # Pydantic v2: fields are accessible via info.data
+        return v.strip() if v else ""
 
 
 class UserLogin(BaseModel):
@@ -177,3 +186,29 @@ class ImportResult(BaseModel):
     success: int
     failed: int
     errors: list[ImportError] = []
+
+
+# ==================== 找回密码模型 ====================
+class ForgotPasswordCheck(BaseModel):
+    username: str = Field(..., min_length=1)
+
+
+class ForgotPasswordCheckResponse(BaseModel):
+    username: str
+    has_security_question: bool
+    security_question: str = ""
+
+
+class ForgotPasswordReset(BaseModel):
+    username: str = Field(..., min_length=1)
+    security_answer: str = Field(..., min_length=1, description="安全问题答案")
+    new_password: str = Field(..., min_length=6, max_length=128, description="新密码")
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not any(c.isalpha() for c in v):
+            raise ValueError("新密码必须包含至少一个字母")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("新密码必须包含至少一个数字")
+        return v

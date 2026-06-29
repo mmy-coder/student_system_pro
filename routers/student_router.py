@@ -159,7 +159,7 @@ async def update_student(
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, name FROM students WHERE id = %s AND user_id = %s AND is_deleted = 0",
+                "SELECT * FROM students WHERE id = %s AND user_id = %s AND is_deleted = 0",
                 (student_id, current_user["user_id"]),
             )
             existing = cur.fetchone()
@@ -182,9 +182,22 @@ async def update_student(
             cur.execute(sql, params)
             conn.commit()
 
-            changes = ", ".join(f"{k}={v}" for k, v in fields.items())
+            # 只记录实际变化的字段
+            import copy
+            changed = []
+            for k, new_v in fields.items():
+                old_v = existing.get(k)
+                if str(old_v) != str(new_v):
+                    # 字段名映射为中文
+                    field_cn = {
+                        "name": "姓名", "age": "年龄", "gender": "性别",
+                        "score": "成绩", "phone": "电话", "class_name": "班级",
+                        "enrollment_date": "入学日期", "address": "地址", "height": "身高"
+                    }.get(k, k)
+                    changed.append(f"{field_cn}: {old_v} → {new_v}")
+            changes = "; ".join(changed) if changed else "无实际变更"
             _audit_log(conn, current_user["user_id"], "UPDATE", student_id,
-                       f"更新学生 [{existing['name']}]: {changes}", request)
+                       f"{existing['name']} — {changes}", request)
 
             return {"message": "更新成功"}
     finally:
@@ -335,13 +348,15 @@ async def export_students(
                 "入学日期", "地址", "身高(cm)"
             ])
             for row in data:
-                # 日期转 YYYY/MM/DD 格式，避免 WPS/Excel 显示 ######
+                # 日期统一转为 ISO 格式并以 ="..." 输出，避免 Excel/WPS 列宽不足显示 ###
                 enroll = row.get("enrollment_date")
-                if enroll:
+                if enroll is not None and enroll != "":
                     if hasattr(enroll, 'strftime'):
-                        enroll_str = enroll.strftime("%Y/%m/%d")
+                        enroll_str = f'="{enroll.strftime("%Y-%m-%d")}"'
+                    elif hasattr(enroll, 'isoformat'):
+                        enroll_str = f'="{enroll.isoformat()}"'
                     else:
-                        enroll_str = str(enroll).replace("-", "/")
+                        enroll_str = f'="{str(enroll)}"'
                 else:
                     enroll_str = ""
 

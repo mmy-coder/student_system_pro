@@ -1,15 +1,19 @@
-"""认证路由 — 注册 / 登录 / 个人信息"""
+"""认证路由 — 注册 / 登录 / 个人信息 / 找回密码"""
 from fastapi import APIRouter, HTTPException, Depends, Request
 from database import get_db_connection
 from auth import hash_password, verify_password, create_access_token, get_current_user
-from models import UserRegister, UserLogin, TokenResponse, UserInfo, ChangePasswordRequest, MessageResponse
+from models import (
+    UserRegister, UserLogin, TokenResponse, UserInfo,
+    ChangePasswordRequest, MessageResponse,
+    ForgotPasswordCheck, ForgotPasswordCheckResponse, ForgotPasswordReset,
+)
 
 router = APIRouter(prefix="", tags=["认证"])
 
 
 @router.post("/register")
 async def register(user: UserRegister, request: Request):
-    """注册新用户 — 密码 bcrypt 哈希存储"""
+    """注册新用户 — 密码 bcrypt 哈希存储，可选安全问题"""
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
@@ -18,9 +22,15 @@ async def register(user: UserRegister, request: Request):
                 raise HTTPException(status_code=400, detail="用户名已存在")
 
             hashed = hash_password(user.password)
+            question = (user.security_question or "").strip()
+            answer = (user.security_answer or "").strip()
+
+            # 安全问题答案也哈希存储（即使是敏感信息也不应该明文存）
+            hashed_answer = hash_password(answer) if question and answer else ""
+
             cur.execute(
-                "INSERT INTO users (username, password) VALUES (%s, %s)",
-                (user.username, hashed),
+                "INSERT INTO users (username, password, security_question, security_answer) VALUES (%s, %s, %s, %s)",
+                (user.username, hashed, question, hashed_answer),
             )
             conn.commit()
 
@@ -138,6 +148,68 @@ async def delete_account(
             cur.execute("DELETE FROM users WHERE id = %s", (uid,))
             conn.commit()
             return MessageResponse(message="账号已注销")
+    finally:
+        conn.close()
+
+
+# ==================== 找回密码 ====================
+@router.post("/forgot-password/check", response_model=ForgotPasswordCheckResponse)
+async def forgot_password_check(req: ForgotPasswordCheck):
+    """第一步：输入用户名，返回安全问题（如有设置）"""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, username, security_question FROM users WHERE username = %s",
+                (req.username,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="该用户名不存在")
+
+            has_question = bool(row.get("security_question", "").strip())
+            return ForgotPasswordCheckResponse(
+                username=row["username"],
+                has_security_question=has_question,
+                security_question=row.get("security_question", ""),
+            )
+    finally:
+        conn.close()
+
+
+@router.post("/forgot-password/reset", response_model=MessageResponse)
+async def forgot_password_reset(req: ForgotPasswordReset, request: Request = None):
+    """第二步：验证安全问题答案，重置密码"""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, username, security_question, security_answer FROM users WHERE username = %s",
+                (req.username,),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="该用户名不存在")
+
+            if not row.get("security_question", "").strip():
+                raise HTTPException(status_code=400, detail="该用户未设置安全问题，无法自助找回")
+
+            # 验证答案（答案也是 bcrypt 哈希存储的）
+            if not verify_password(req.security_answer, row["security_answer"]):
+                raise HTTPException(status_code=400, detail="安全问题答案不正确")
+
+            # 重置密码
+            new_hash = hash_password(req.new_password)
+            cur.execute(
+                "UPDATE users SET password = %s WHERE id = %s",
+                (new_hash, row["id"]),
+            )
+            conn.commit()
+
+            _audit_log(conn, row["id"], "RESET_PASSWORD", "user", row["id"],
+                       f"通过安全问题重置密码: {row['username']}", request)
+
+            return MessageResponse(message="密码重置成功，请使用新密码登录")
     finally:
         conn.close()
 

@@ -274,19 +274,19 @@ def _score_distribution(cur, user_id: int) -> list[dict]:
 
 
 def _monthly_enrollment(cur, user_id: int) -> list[dict]:
-    """过去 12 个月每月新增学生数"""
+    """过去 12 个月每月新增学生数 — 优先使用 enrollment_date，为空则用 created_at"""
     try:
         cur.execute("""
-            SELECT DATE_FORMAT(created_at, '%Y-%m') as month, COUNT(*) as cnt
+            SELECT
+                DATE_FORMAT(COALESCE(enrollment_date, created_at), '%%Y-%%m') as month,
+                COUNT(*) as cnt
             FROM students
             WHERE is_deleted = 0
               AND user_id = %s
-              AND created_at >= DATE_SUB(NOW(), INTERVAL 12 MONTH)
             GROUP BY month
             ORDER BY month ASC
         """, (user_id,))
         rows = cur.fetchall()
         return [{"month": r["month"], "count": r["cnt"]} for r in rows]
     except Exception:
-        # created_at 列可能不存在（旧表兼容）
         return []

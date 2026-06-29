@@ -61,9 +61,22 @@ def init_database():
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     username VARCHAR(50) NOT NULL UNIQUE,
                     password VARCHAR(255) NOT NULL,
+                    security_question VARCHAR(200) DEFAULT '',
+                    security_answer VARCHAR(255) DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
+
+            # 兼容旧表：如果 users 表没有 security_question 列则添加
+            try:
+                cur.execute("SELECT security_question FROM users LIMIT 1")
+            except Exception:
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN security_question VARCHAR(200) DEFAULT '' AFTER password"
+                )
+                cur.execute(
+                    "ALTER TABLE users ADD COLUMN security_answer VARCHAR(255) DEFAULT '' AFTER security_question"
+                )
 
             # 学生表 — 增加软删除 + 更新时间
             cur.execute("""
